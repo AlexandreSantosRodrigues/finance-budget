@@ -1,0 +1,191 @@
+import pandas as pd
+
+file_path = '/kaggle/input/datasets/alexandresanto/finance-budget/Budget_vs_Actual_Data.xlsx'
+
+df = pd.read_excel(file_path)
+
+print("--- Status Inicial ---")
+print(f"Tamanho do dataset antes da limpeza (Linhas, Colunas): {df.shape}")
+
+total_duplicatas = df.duplicated().sum()
+print(f"Total de registros perfeitamente duplicados encontrados: {total_duplicatas}")
+
+df = df.drop_duplicates(keep='first')
+
+df = df.reset_index(drop=True)
+
+print("\n--- Status Após o Passo 1 ---")
+print(f"Tamanho do dataset após remover duplicatas: {df.shape}")
+
+print("--- Diagnóstico de Valores Ausentes ---")
+valores_nulos = df.isnull().sum()
+
+colunas_com_nulos = valores_nulos[valores_nulos > 0]
+print("Colunas com valores ausentes e suas quantidades:")
+print(colunas_com_nulos)
+
+total_nulos_antes = df.isnull().sum().sum()
+print(f"\nTotal geral de células vazias no dataset: {total_nulos_antes}")
+
+colunas_numericas = ['Budget Amount', 'Actual Amount']
+
+for col in colunas_numericas:
+    if df[col].isnull().sum() > 0:
+        mediana = df[col].median()
+        df[col] = df[col].fillna(mediana)
+        print(f"-> Preenchidos valores nulos em '{col}' com a mediana: {mediana}")
+
+colunas_categoricas = ['Department', 'Category', 'Region', 'Payment Method']
+
+for col in colunas_categoricas:
+    if df[col].isnull().sum() > 0:
+        moda = df[col].mode()[0]
+        df[col] = df[col].fillna(moda)
+        print(f"-> Preenchidos valores nulos em '{col}' com a moda: {moda}")
+
+print("\n--- Status Após o Passo 2 ---")
+nulos_restantes = df.isnull().sum().sum()
+if nulos_restantes == 0:
+    print("Sucesso! O dataset está 100% preenchido e limpo de valores ausentes.")
+else:
+    print(f"Atenção: Ainda restam {nulos_restantes} valores ausentes.")
+
+print("--- Investigando Nulos Restantes ---")
+nulos_restantes = df.isnull().sum()
+colunas_pendentes = nulos_restantes[nulos_restantes > 0]
+print("Colunas que ainda possuem nulos:")
+print(colunas_pendentes)
+
+
+if 'Date' in df.columns and df['Date'].isnull().sum() > 0:
+    df['Date'] = df['Date'].ffill()
+    print("\n-> Nulos em 'Date' preenchidos usando a data imediatamente anterior (ffill).")
+
+
+if 'Transaction ID' in df.columns and df['Transaction ID'].isnull().sum() > 0:
+    df['Transaction ID'] = df['Transaction ID'].fillna("ID_Nao_Informado")
+    print("-> Nulos em 'Transaction ID' preenchidos com 'ID_Nao_Informado'.")
+
+for col in df.select_dtypes(include=['object', 'string']).columns:
+    if df[col].isnull().sum() > 0:
+        df[col] = df[col].fillna("Não Informado")
+        print(f"-> Nulos na coluna de texto '{col}' preenchidos com 'Não Informado'.")
+
+print("\n--- Status Pós-Correção ---")
+nulos_finais = df.isnull().sum().sum()
+
+if nulos_finais == 0:
+    print("🎯 Sucesso absoluto! O dataset agora está 100% limpo e estruturalmente íntegro.")
+else:
+    print(f"Atenção: Ainda restam {nulos_finais} nulos. (Isso não deve ocorrer após este script).")
+
+df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+
+df['Year'] = df['Date'].dt.year
+df['Month_Num'] = df['Date'].dt.month  
+df['Month_Name'] = df['Date'].dt.strftime('%B') 
+
+df['Variance'] = df['Budget Amount'] - df['Actual Amount']
+
+df['Variance_Pct'] = np.where(
+    df['Budget Amount'] != 0, 
+    (df['Variance'] / df['Budget Amount']) * 100, 
+    0.0
+    )
+
+print("--- Atributos Criados com Sucesso ---")
+print(f"Novo formato do dataset (Linhas, Colunas): {df.shape}")
+print("\nVisualização das primeiras 3 linhas com os novos campos:")
+
+colunas_validacao = ['Date', 'Year', 'Month_Name', 'Budget Amount', 'Actual Amount', 'Variance', 'Variance_Pct']
+print(df[colunas_validacao].head(3))
+
+
+df_dept['Diferenca_Absoluta'] = abs(df_dept['Budget Amount'] - df_dept['Actual Amount'])
+
+top3_dept = df_dept.nlargest(3, 'Diferenca_Absoluta')
+lista_top3 = top3_dept['Department'].tolist()
+
+plt.figure(figsize=(10, 6))
+sns.barplot(data=top3_dept, x='Department', y='Diferenca_Absoluta', palette='Reds_r')
+plt.title('Top 3 Departamentos: Maior Erro de Estimativa (Diferença Absoluta)', fontsize=14, fontweight='bold')
+plt.xlabel('Departamento', fontsize=12)
+plt.ylabel('Variação Absoluta ($)', fontsize=12)
+plt.tight_layout()
+plt.show()
+
+df_top3 = df[df['Department'].isin(lista_top3)]
+
+df_linha = df_top3.groupby(['Year', 'Department'])['Actual Amount'].sum().unstack()
+
+df_linha.plot(kind='line', marker='o', linewidth=2.5, markersize=8, figsize=(12, 6), colormap='tab10')
+
+plt.title('Evolução do Gasto Real ao Longo dos Anos (Top 3 Departamentos)', fontsize=14, fontweight='bold')
+plt.xlabel('Ano', fontsize=12)
+plt.ylabel('Gasto Real ($)', fontsize=12)
+plt.xticks([2021, 2022, 2023]) 
+plt.legend(title='Departamento', bbox_to_anchor=(1.05, 1), loc='upper left') 
+plt.grid(True, linestyle='--', alpha=0.6) 
+plt.tight_layout()
+plt.show()
+
+
+df_tendencia = df.groupby(['Department', 'Year'])['Actual Amount'].sum().reset_index()
+
+dados_comparacao = []
+
+for dept in df['Department'].unique():
+    dados_dept = df_tendencia[df_tendencia['Department'] == dept]
+    
+    X = dados_dept['Year'].values
+    y = dados_dept['Actual Amount'].values
+    
+    coeficientes = np.polyfit(X, y, 1)
+    inclinacao_m = coeficientes[0]
+    intercepto_b = coeficientes[1]
+    prev_2024 = max(0, (inclinacao_m * 2024) + intercepto_b)
+    
+    
+    gasto_2023 = dados_dept[dados_dept['Year'] == 2023]['Actual Amount'].values[0]
+    
+    dados_comparacao.append({
+        'Departamento': dept, 
+        'Gasto_Real_2023': gasto_2023,
+        'Previsao_2024': prev_2024
+    })
+
+df_previsao = pd.DataFrame(dados_comparacao)
+
+
+df_plot = df_previsao.melt(id_vars='Departamento', 
+                           var_name='Ano_Referencia', 
+                           value_name='Valor_Gasto')
+
+df_plot['Ano_Referencia'] = df_plot['Ano_Referencia'].replace({
+    'Gasto_Real_2023': 'Realizado (2023)', 
+    'Previsao_2024': 'Projeção Algorítmica (2024)'
+})
+
+
+plt.figure(figsize=(15, 7))
+
+grafico_barras = sns.barplot(data=df_plot, x='Departamento', y='Valor_Gasto', 
+                             hue='Ano_Referencia', palette=['#95a5a6', '#2ecc71'])
+
+plt.title('Comparativo Financeiro: Realizado em 2023 vs Projeção para 2024', fontsize=16, fontweight='bold')
+plt.xlabel('Departamento', fontsize=12)
+plt.ylabel('Montante Financeiro ($)', fontsize=12)
+
+for p in grafico_barras.patches:
+    altura = p.get_height()
+    if altura > 0:
+        grafico_barras.annotate(f'$ {altura:,.0f}', 
+                                xy=(p.get_x() + p.get_width() / 2, altura),
+                                xytext=(0, 5), 
+                                textcoords="offset points",
+                                ha='center', va='bottom', fontsize=10, color='#333333', rotation=0)
+
+plt.ylim(0, df_plot['Valor_Gasto'].max() * 1.15)
+plt.legend(title='Indicador', loc='upper right')
+plt.tight_layout()
+plt.show()
